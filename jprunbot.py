@@ -8,27 +8,24 @@ from time import sleep
 
 dir = Path(os.path.dirname(os.path.abspath(__file__)))
 
-# Authenticate to Twitter, insert access information
-auth = tweepy.OAuthHandler("", "")
-auth.set_access_token("", "")
+# Authenticate to Twitter
+auth = tweepy.OAuthHandler("YOUR_OAUTH_HANDLER")
+auth.set_access_token("YOUR_ACCESS_TOKEN")
 api = tweepy.API(auth)
 
 def get_new():
     #Structure: id, runner_id
     data = json.loads(requests.get("https://www.speedrun.com/api/v1/runs?status=verified&orderby=verify-date&direction=desc&max=200").text)
 
-#----- TEST START
-#    with open(dir / 'test.txt', 'r') as f:
-#        data = json.loads(f.read())
-#----- TEST END
-        
     runs = []
-    
+
     with open(dir / 'run.txt', 'w') as f:
         print ("Getting new runs... ")
         for item in data["data"]:
-            runs.append(item['id'])
-            f.write(item['id'] + "\n")
+            if item['level'] == None:
+                print(item['id'])
+                runs.append(item['id'])
+                f.write(item['id'] + "\n")
         f.write("\n")
     runs.reverse()
     return runs
@@ -66,7 +63,7 @@ def send_runs():
 
         users = []
         is_japanese = False
-        
+
         for user in run['players']:
             try:
                 user_data = json.loads(requests.get("https://www.speedrun.com/api/v1/users/" + user['id']).text)['data']
@@ -106,23 +103,51 @@ def send_runs():
                     game = game_data['names']['japanese']
                 else:
                     game = game_data['names']['international']
-                
+
                 category = json.loads(requests.get("https://www.speedrun.com/api/v1/categories/" + run['category']).text)['data']['name']
 
+                sub_cats = ""
+                for value in run['values']:
+                    print(str(value))
+                    print(run['values'][value])
+                    is_sub = str(json.loads(requests.get("https://www.speedrun.com/api/v1/variables/" + str(value)).text)['data']['is-subcategory'])
+                    if is_sub == "True":
+                        variable = json.loads(requests.get("https://www.speedrun.com/api/v1/variables/" + str(value)).text)['data']['values']['values']
+                        #variable = json.loads(requests.get("https://www.speedrun.com/api/v1/variables/" + str(value)).text)['data']['values']['values'][str(value)]
+                        print(str(variable))
+                        sub_cats = sub_cats + " [" + variable[run['values'][value]]['label'] + "]"
+
                 url =  json.loads(requests.get("https://www.speedrun.com/api/v1/runs/" + item).text)['data']['weblink']
-               
+
                 real = 0
                 ingame = 0
                 real_string = ""
                 ingame_string = ""
                 time_text = ""
-                
-                real = int(run['times']['realtime_t'])
+                noloads = 0
+                noloads_string = ""
+
+                real = run['times']['realtime_t']
                 if real > 0:
-                    real_string = str(datetime.timedelta(seconds=real))
-                ingame = int(run['times']['ingame_t'])
-                if ingame > 0: 
-                    ingame_string = str(datetime.timedelta(seconds=ingame))
+                    if '.' in str(real):
+                        real_string = str(datetime.timedelta(seconds=real)).rstrip('0').lstrip('0:').replace(" day, ", "d")
+                    else:
+                        real_string = str(datetime.timedelta(seconds=real)).lstrip('0:').replace(" day, ", "d")
+
+                ingame = run['times']['ingame_t']
+                if ingame > 0:
+                    if '.' in str(ingame):
+                        ingame_string = str(datetime.timedelta(seconds=ingame)).rstrip('0').lstrip('0:')
+                    else:
+                        ingame_string = str(datetime.timedelta(seconds=ingame)).lstrip('0:')
+
+                noloads = run['times']['realtime_noloads_t']
+                if noloads > 0:
+                    if '.' in str(noloads):
+                        noloads_string = str(datetime.timedelta(seconds=noloads)).rstrip('0').lstrip('0:')
+                    else:
+                        noloads_string = str(datetime.timedelta(seconds=noloads)).lstrip('0:')
+
 
                 if (ingame > 0 and real > 0):
                     time_text = real_string + " RTA, " + ingame_string + " IGT"
@@ -134,22 +159,18 @@ def send_runs():
                     time_text = real_string
                     print(time_text)
 
-#                print ("Game: " + game)
-#               print ("Category: " + category)
-#                print ("Player: " + users_text)
-#                print ("Time: " + time_text)
-                print ("URL: " + url)
+                if (noloads > 0):
+                    time_text = time_text + ", " + noloads_string + " (No Loads)"
+                    print(time_text)
 
                 with open(dir / 'jp_runs.txt', 'a') as f:
                     f.write((item + "\n"))
-#                with open(dir / 'jp_detail.txt', 'a') as f:
-#                    f.write(("Game: " + game + "\n" + "Category: " + category + "\n" + "Player: " + users_text + "\n" + "Time: " + time_text + "\n" + "URL: " + url + "\n\n" ).encode())
 
-                api.update_status(game + " - " + category + " in " + time_text + " by " + users_text + ": " + url)
-        sleep(2)
+                api.update_status(game + " - " + category + sub_cats + " in " + time_text + " by " + users_text + " " + url)
+        sleep(1)
     sleep(5)
 
-                                       
+
 #------------------------------------------------------------------#
 
 try:
@@ -157,13 +178,10 @@ try:
     print("Authentication OK")
 except:
     print("Error during authentication")
-    
-new = get_new() # fetch a list [] #new = get_new_test()
+
+new = get_new()
 old = get_old()
 fresh = compare(old, new)
-#for run in new:
-#    print(run)
-
-sleep(5)
 
 send_runs()
+sleep(5)
